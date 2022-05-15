@@ -1,0 +1,229 @@
+** Part I - Probability
+
+import pandas as pd
+import numpy as np
+import random
+import matplotlib.pyplot as plt
+%matplotlib inline
+#We are setting the seed to assure you get the same answers on quizzes as we set up
+random.seed(42)
+
+* Read in the dataset from the ab_data.csv file and take a look at the top few rows here:
+
+df = pd.read_csv('ab_data.csv')
+df.head()
+
+* Use the cell below to find the number of rows in the dataset.
+
+df.shape
+
+* The number of unique users in the dataset.
+
+df.user_id.nunique()
+
+* The proportion of users converted.
+
+df['converted'].sum() / len(df)
+
+* The number of times when the "group" is treatment but "landing_page" is not a new_page.
+
+len(df.query("(group == 'control') and (landing_page == 'new_page')") + df.query("(group == 'treatment') and\
+                                                                                 (landing_page == 'old_page')"))
+                                                                                 
+* Do any of the rows have missing values?
+
+df.info()
+
+*  Now use the answer to the quiz to create a new dataset that meets the specifications from the quiz. Store your new dataframe in df2
+
+df2 = df.drop(df[((df.group == 'control') & (df.landing_page == 'new_page')) | \
+                 ((df.group == 'treatment') & (df.landing_page == 'old_page'))].index)
+                 
+df2[((df2['group'] == 'treatment') == (df2['landing_page'] == 'new_page')) == False].shape[0]
+                 
+* How many unique user_ids are in df2?
+
+df2.user_id.nunique()
+
+*  There is one user_id repeated in df2. What is it?
+
+duplicate_user = df2[df2['user_id'].duplicated()].user_id
+duplicate_user
+
+* Display the rows for the duplicate user_id
+
+df2[df2['user_id'] == duplicate_user.iloc[0]]
+
+* Remove one of the rows with a duplicate user_id, from the df2 dataframe.
+
+# Remove one of the rows with a duplicate user_id..
+# Hint: The dataframe.drop_duplicates() may not work in this case because the rows with duplicate user_id are not entirely identical. 
+df2.drop_duplicates(['user_id'], inplace=True)
+# Check again if the row with a duplicate user_id is deleted or not
+df2.shape
+
+* What is the probability of an individual converting regardless of the page they receive?
+
+df2['converted'].sum() / len(df2)
+
+*  Given that an individual was in the control group, what is the probability they converted?
+
+control_conversion = df2[df2['group'] == 'control']['converted'].sum() / len(df2[df2['group'] == 'control'])
+control_conversion
+
+* Given that an individual was in the treatment group, what is the probability they converted?
+
+treatment_conversion = df2[df2['group'] == 'treatment']['converted'].sum() / len(df2[df2['group'] == 'treatment'])
+treatment_conversion
+
+*  What is the probability that an individual received the new page?
+
+df2[df2['landing_page'] == 'new_page']['group'].count() / len(df2)
+
+* Consider your results from parts (a) through (d) above, and explain below whether the new treatment group users lead to more conversions.
+
+obs_diff = treatment_conversion - control_conversion
+obs_diff
+
+
+** Part II - A/B Test
+
+
+* What is the conversion rate for  pnew  under the null hypothesis?
+
+p_new = df2['converted'].sum() / len(df2)
+p_new
+
+*  What is the conversion rate for  pold  under the null hypothesis?
+
+p_old = df2['converted'].sum() / len(df2)
+p_old
+
+*  What is  nnew , the number of individuals in the treatment group?
+
+n_new = df2[df2['landing_page'] == 'new_page']['landing_page'].count()
+n_new
+
+*  What is  nold , the number of individuals in the control group?
+
+n_old = df2[df2['landing_page'] == 'old_page']['landing_page'].count()
+n_old
+
+* Simulate Sample for the treatment Group
+
+treatment_df = df2.query('group == "treatment"')
+sample_new = treatment_df.sample(n_new, replace=True)
+new_page_converted = sample_new['converted']
+new_page_converted.mean()
+
+* Simulate Sample for the control Group
+
+control_df = df2.query('group == "control"')
+sample_old = control_df.sample(n_old, replace=True)
+old_page_converted = sample_old['converted']
+old_page_converted.mean()
+
+* Find the difference in the "converted" probability  (p′new  -  p′old)  for your simulated samples from the parts (e) and (f) above.
+
+p_diff_simulate = new_page_converted.mean() - old_page_converted.mean()
+p_diff_simulate
+
+* Sampling distribution
+
+# Sampling distribution 
+p_diffs = []
+
+for _ in range(10000):
+    new_page_converted = np.random.binomial(1,p_new,n_new).mean()
+    old_page_converted = np.random.binomial(1,p_old,n_old).mean()
+    p_diffs.append(new_page_converted - old_page_converted)
+        
+* Histogram
+
+p_diffs = np.array(p_diffs)
+plt.hist(p_diffs)
+
+* What proportion of the p_diffs are greater than the actual difference observed in the df2 data?
+
+(p_diffs > obs_diff).mean()
+
+* Using Built-in Methods for Hypothesis Testing
+
+import statsmodels.api as sm
+
+# number of conversions with the old_page
+convert_old = len(df2.query('landing_page == "old_page" & converted == 1'))
+
+# number of conversions with the new_page
+convert_new = len(df2.query('landing_page == "new_page" & converted == 1'))
+
+# number of individuals who were shown the old_page
+n_old = len(df2.query('landing_page == "old_page"'))
+# number of individuals who received new_page
+n_new =len(df2.query('landing_page == "new_page"'))
+
+* Now use sm.stats.proportions_ztest() to compute your test statistic and p-value. Here is a helpful link on using the built in.
+
+# ToDo: Complete the sm.stats.proportions_ztest() method arguments
+z_score, p_value =sm.stats.proportions_ztest([convert_old, convert_new], [n_old, n_new],value=None, alternative='smaller', prop_var=False)
+print(z_score, p_value)
+
+
+
+** Part III - A regression approach
+
+
+
+* The goal is to use statsmodels library to fit the regression model you specified in part a. above to see if there is a significant difference in conversion based on the page-type a customer receives. However, you first need to create the following two columns in the df2 dataframe
+
+from scipy import stats
+df2['intercept'] = 1
+df2['ab_page'] = pd.get_dummies(df2['group'])['treatment']
+df2.head()
+
+* Use statsmodels to instantiate your regression model on the two columns you created in part (b). above, then fit the model to predict whether or not an individual converts
+
+log_mod = sm.Logit(df2['converted'], df2[['intercept', 'ab_page']])
+results = log_mod.fit()
+
+* Provide the summary of your model below, and use it as necessary to answer the following questions.
+
+results.summary()
+
+* Now along with testing if the conversion rate changes for different pages, also add an effect based on which country a user lives in
+
+countries_df = pd.read_csv('./countries.csv')
+df_new = countries_df.set_index('user_id').join(df2.set_index('user_id'), how='inner')
+df_new.head()
+
+dum_countries = pd.get_dummies(df_new['country'])
+df4 = dum_countries.join(df_new, how='inner')
+df4.head()
+
+log_mod2 = sm.Logit(df4['converted'], df4[['intercept', 'ab_page', 'UK', 'CA']])
+results = log_mod2.fit()
+results.summary()
+
+*  Fit your model and obtain the results
+
+df_new.groupby(['country','ab_page'], as_index=False).mean()
+
+df_new['intercept'] = 1
+
+lm = sm.Logit(df_new['converted'],df_new[['intercept','ab_page','US','interaction_us_ab_page','CA','interaction_ca_ab_page']])
+results = lm.fit()
+results.summary()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
